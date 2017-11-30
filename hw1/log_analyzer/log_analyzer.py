@@ -5,7 +5,6 @@ import json
 import re
 import time
 import gzip
-import itertools
 from datetime import datetime
 
 usage_text = '''
@@ -47,12 +46,12 @@ REPORT_RE_DATE_GROUP_NAME = LOG_RE_DATE_GROUP_NAME = 'date'
 REPORT_FILENAME_DATE_FORMAT = '%Y.%m.%d'
 LOG_FILENAME_DATE_FORMAT = '%Y%m%d'
 
-REPORT_TEMPLATE_PATH = 'template.html'
+REPORT_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'template.html')
 
 LOG_RECORD_RE = re.compile(
     '^'
     '\S+ '  # remote_addr
-    '\S+  '  # remote_user (note: ends with double space)
+    '\S+\s+'  # remote_user (note: ends with double space)
     '\S+ '  # http_x_real_ip
     '\[\S+ \S+\] '  # time_local [datetime tz] i.e. [29/Jun/2017:10:46:03 +0300]
     '"\S+ (?P<href>\S+) \S+" '  # request "method href proto" i.e. "GET /api/v2/banner/23815685 HTTP/1.1"
@@ -169,7 +168,98 @@ def validate_config(config):
 
 
 ####################################
-# Arguments parsing
+# Analyzing
+####################################
+
+
+def analyze(records, max_records):
+    total_records = 0
+    total_time = 0
+    intermediate_data = {}
+
+    for href, response_time in records:
+        total_records += 1
+        total_time += response_time
+        create_or_update_intermediate_item(intermediate_data, href, response_time)
+
+    sorted_values = sorted(intermediate_data.itervalues(), key=lambda i: i['response_time_avg'], reverse=True)
+    if len(sorted_values) > max_records:
+        del sorted_values[max_records-1:]
+
+    return [create_result_item(intermediate_item, total_records, total_time) for intermediate_item in sorted_values]
+
+
+def create_or_update_intermediate_item(intermediate_data, href, response_time):
+    item = intermediate_data.get(href)
+    if not item:
+        item = {'href': href,
+                'requests_count': 0,
+                'response_time_sum': 0,
+                'max_response_time': response_time,
+                'all_responses_time': []}
+        intermediate_data[href] = item
+
+    item['requests_count'] += 1
+    item['response_time_sum'] += response_time
+    item['max_response_time'] = max(item['max_response_time'], response_time)
+    item['response_time_avg'] = item['response_time_sum'] / item['requests_count']
+    item['all_responses_time'].append(response_time)
+
+
+def create_result_item(intermediate_item, total_records, total_time):
+    url = intermediate_item['href']
+    count = intermediate_item['requests_count']
+    count_perc = intermediate_item['requests_count'] / float(total_records) * 100
+    time_avg = intermediate_item['response_time_avg']
+    time_max = intermediate_item['max_response_time']
+    time_med = median(intermediate_item['all_responses_time'])
+    time_perc = intermediate_item['response_time_sum'] / total_time
+    time_sum = intermediate_item['response_time_sum']
+
+    return {
+        'url': url,
+        'count': count,
+        'count_perc': round(count_perc, 3),
+        'time_avg': round(time_avg, 3),
+        'time_max': round(time_max, 3),
+        'time_med': round(time_med, 3),
+        'time_perc': round(time_perc, 3),
+        'time_sum': round(time_sum, 3)
+    }
+
+
+def get_log_records(log_path):
+    open_fn = open
+    if is_gzip_file(log_path):
+        open_fn = gzip.open
+
+    with open_fn(log_path, 'r') as log_file:
+        while True:
+            line = log_file.readline()
+            if not line:
+                break
+
+            record = parse_log_record(line)
+            if not record:
+                continue
+
+            yield record
+
+
+def parse_log_record(log_line):
+    match = LOG_RECORD_RE.match(log_line)
+    if not match:
+        logger.error('Unable to parse line: "{}"'.format(log_line.rstrip()))
+        return None
+
+    href = match.groupdict()['href']
+    request_time = float(match.groupdict()['time'])
+
+    return href, request_time
+
+
+####################################
+# Utils
 ####################################
 
 
@@ -203,22 +293,6 @@ def parse_args(args, help=None):
         sys.exit(0)
 
     return args_dict
-
-
-####################################
-# Analyzing
-####################################
-
-def log_duration(fn):
-    def wrapper(*args, **kwargs):
-        logger.info('Function "{}" started.'.format(fn.__name__))
-        start_time = time.time()
-        res = fn(*args, **kwargs)
-        duration = time.time() - start_time
-        logger.info('Function "{}" finished. Duration: {:.2f} seconds'.format(fn.__name__, duration))
-        return res
-
-    return wrapper
 
 
 def parse_file_date(filename, date_format, date_re, date_re_group_name):
@@ -299,94 +373,6 @@ def is_gzip_file(file_path):
         return f.read(2) == GZIP_FILE_SIG
 
 
-def parse_log_record(log_line):
-    match = LOG_RECORD_RE.match(log_line)
-    if not match:
-        return None
-
-    href = match.groupdict()['href']
-    request_time = float(match.groupdict()['time'])
-
-    return href, request_time
-
-
-def get_log_records(log_path):
-    open_fn = open
-    if is_gzip_file(log_path):
-        open_fn = gzip.open
-
-    with open_fn(log_path, 'r') as log_file:
-        while True:
-            line = log_file.readline()
-            if not line:
-                break
-
-            record = parse_log_record(line)
-            if not record:
-                logger.error('Unable to parse line: "{}"'.format(line))
-                continue
-
-            yield record
-
-
-def create_or_update_intermediate_item(intermediate_data, href, response_time):
-    item = intermediate_data.get(href)
-    if not item:
-        item = {'href': href,
-                'requests_count': 0,
-                'response_time_sum': 0,
-                'max_response_time': response_time,
-                'all_responses_time': []}
-        intermediate_data[href] = item
-
-    item['requests_count'] += 1
-    item['response_time_sum'] += response_time
-    item['max_response_time'] = max(item['max_response_time'], response_time)
-    item['response_time_avg'] = item['response_time_sum'] / item['requests_count']
-    item['all_responses_time'].append(response_time)
-
-
-def create_result_item(intermediate_item, total_records, total_time):
-    url = intermediate_item['href']
-    count = intermediate_item['requests_count']
-    count_perc = intermediate_item['requests_count'] / float(total_records) * 100
-    time_avg = intermediate_item['response_time_avg']
-    time_max = intermediate_item['max_response_time']
-    time_med = median(intermediate_item['all_responses_time'])
-    time_perc = intermediate_item['response_time_sum'] / total_time
-    time_sum = intermediate_item['response_time_sum']
-
-    return {
-        'url': url,
-        'count': count,
-        'count_perc': round(count_perc, 3),
-        'time_avg': round(time_avg, 3),
-        'time_max': round(time_max, 3),
-        'time_med': round(time_med, 3),
-        'time_perc': round(time_perc, 3),
-        'time_sum': round(time_sum, 3)
-    }
-
-
-@log_duration
-def analyze_log(log_path, max_records):
-    records = get_log_records(log_path)
-    total_records = 0
-    total_time = 0
-    intermediate_data = {}
-
-    for href, response_time in records:
-        total_records += 1
-        total_time += response_time
-        create_or_update_intermediate_item(intermediate_data, href, response_time)
-
-    sorted_values = sorted(intermediate_data.itervalues(), key=lambda i: i['response_time_avg'], reverse=True)
-    if len(sorted_values) > max_records:
-        del sorted_values[max_records-1:]
-
-    return [create_result_item(intermediate_item, total_records, total_time) for intermediate_item in sorted_values]
-
-
 def median(values_list):
     if not values_list:
         return None
@@ -454,7 +440,7 @@ def main(args):
 
     logger.info('Collecting data from "{}"'.format(os.path.normpath(latest_log)))
 
-    analyzed_data = analyze_log(latest_log, config[CONFIG_REPORT_SIZE])
+    analyzed_data = analyze(get_log_records(latest_log), config[CONFIG_REPORT_SIZE])
 
     report_date = parse_log_date(latest_log).strftime(REPORT_FILENAME_DATE_FORMAT)
     report_filename = REPORT_NAME_PATTERN.format(report_date)
