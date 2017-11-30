@@ -3,6 +3,77 @@ import unittest
 import shutil
 import os
 
+log_analyzer.logger.disabled = True
+
+
+class TestAnalyze(unittest.TestCase):
+    def test_parse_log_record(self):
+        line = ('1.138.198.128 '
+                '-  '
+                '- '
+                '[29/Jun/2017:04:24:24 +0300] '
+                '"GET /api/v2//group/7085835/banners HTTP/1.1" '
+                '200 '
+                '3777 '
+                '"-" '
+                '"python-requests/2.8.1" '
+                '"-" '
+                '"1498699463-440360380-4707-9845441" '
+                '"4e9627334" '
+                '1.349\n')
+
+        href, response_time = log_analyzer.parse_log_record(line)
+        self.assertEqual(href, '/api/v2//group/7085835/banners')
+        self.assertAlmostEqual(response_time, 1.349)
+
+    def test_parse_log_record_returns_none_if_href_invalid(self):
+        line = ('1.138.198.128 '
+                '-  '
+                '- '
+                '[29/Jun/2017:04:24:24 +0300] '
+                '"INVALID_HREF" '
+                '200 '
+                '3777 '
+                '"-" '
+                '"python-requests/2.8.1" '
+                '"-" '
+                '"1498699463-440360380-4707-9845441" '
+                '"4e9627334" '
+                '1.349\n')
+
+        record = log_analyzer.parse_log_record(line)
+
+        self.assertIsNone(record)
+
+    def test_parse_log_record_returns_none_if_href_response_time(self):
+        line = ('1.138.198.128 '
+                '-  '
+                '- '
+                '[29/Jun/2017:04:24:24 +0300] '
+                '"GET /api/v2//group/7085835/banners HTTP/1.1" '
+                '200 '
+                '3777 '
+                '"-" '
+                '"python-requests/2.8.1" '
+                '"-" '
+                '"1498699463-440360380-4707-9845441" '
+                '"4e9627334" '
+                'INVALID_RESPONSE_TIME\n')
+
+        record = log_analyzer.parse_log_record(line)
+
+        self.assertIsNone(record)
+
+    def test_parse_log_file_plain(self):
+        plain_log_file = './test_data/log_plain'
+        records = list(log_analyzer.get_log_records(plain_log_file))
+        self.assertEqual(len(records), 2)
+
+    def test_parse_log_file_gzip(self):
+        gzip_log_file = './test_data/log_gzip.gz'
+        records = list(log_analyzer.get_log_records(gzip_log_file))
+        self.assertEqual(len(records), 2)
+
 
 class TestArgumentParse(unittest.TestCase):
     def test_positional_params(self):
