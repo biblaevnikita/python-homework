@@ -45,7 +45,7 @@ class TestAnalyze(unittest.TestCase):
 
         self.assertIsNone(record)
 
-    def test_parse_log_record_returns_none_if_href_response_time(self):
+    def test_parse_log_record_returns_none_if_response_time_invalid(self):
         line = ('1.138.198.128 '
                 '-  '
                 '- '
