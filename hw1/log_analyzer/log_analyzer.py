@@ -63,7 +63,6 @@ LOG_RECORD_RE = re.compile(
     '"\S+" '  # http_X_REQUEST_ID
     '"\S+" '  # http_X_RB_USER
     '(?P<time>\d+\.\d+)'  # request_time
-    '$'
 )
 GZIP_FILE_SIG = bytearray.fromhex('1f8b')
 
