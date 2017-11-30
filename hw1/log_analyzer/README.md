@@ -25,5 +25,7 @@ optional arguments:
   --config CONFIG      config file path
 ```
 
-## Tests: 
-Not yet
+## Tests usage: 
+```
+python -m unittest discover -s ./log_analyzer
+```
