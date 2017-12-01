@@ -74,6 +74,44 @@ class TestAnalyze(unittest.TestCase):
         records = list(log_analyzer.get_log_records(gzip_log_file))
         self.assertEqual(len(records), 2)
 
+    def test_create_result_item(self):
+        total_time = 2.0
+        total_records = 12
+
+        href = '/api/smth'
+        requests_count = 5
+        responses = [0.01, 0.015, 0.03, 0.01, 0.007]
+        response_time_sum = 0.072
+        max_response_time = 0.03
+        response_time_avg = 0.014
+
+        intermediate_item = {'href': href,
+                             'requests_count': requests_count,
+                             'response_time_sum': response_time_sum,
+                             'max_response_time': max_response_time,
+                             'response_time_avg': response_time_avg,
+                             'all_responses_time': responses}
+
+        expect_url = '/api/smth'
+        expect_requests_count = 5
+        expect_count_perc = 41.666666
+        expect_time_avg = 0.0144
+        expect_time_max = 0.03
+        expect_time_med = 0.01
+        expect_time_perc = 3.599999
+        expect_time_sum = 0.072
+
+        result_item = log_analyzer.create_result_item(intermediate_item, total_records, total_time)
+
+        self.assertEqual(result_item['url'], expect_url)
+        self.assertEqual(result_item['count'], expect_requests_count)
+        self.assertAlmostEqual(result_item['count_perc'], expect_count_perc, delta=0.001)
+        self.assertAlmostEqual(result_item['time_avg'], expect_time_avg, delta=0.001)
+        self.assertAlmostEqual(result_item['time_max'], expect_time_max, delta=0.001)
+        self.assertAlmostEqual(result_item['time_med'], expect_time_med, delta=0.001)
+        self.assertAlmostEqual(result_item['time_perc'], expect_time_perc, delta=0.001)
+        self.assertAlmostEqual(result_item['time_sum'], expect_time_sum, delta=0.001)
+
 
 class TestArgumentParse(unittest.TestCase):
     def test_positional_params(self):
