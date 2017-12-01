@@ -190,6 +190,10 @@ class TestAnalyze(unittest.TestCase):
         data = [6]
         self.assertEqual(log_analyzer.median(data), 6)
 
+    def test_median_for_an_empty_list(self):
+        data = []
+        self.assertIsNone(log_analyzer.median(data))
+
 
 class TestArgumentParse(unittest.TestCase):
     def test_positional_params(self):
