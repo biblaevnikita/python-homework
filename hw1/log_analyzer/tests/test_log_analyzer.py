@@ -112,6 +112,68 @@ class TestAnalyze(unittest.TestCase):
         self.assertAlmostEqual(result_item['time_perc'], expect_time_perc, delta=0.001)
         self.assertAlmostEqual(result_item['time_sum'], expect_time_sum, delta=0.001)
 
+    def test_create_intermediate_item(self):
+        intermediate_data = {}
+        href = '/api/smth'
+        response_time = 0.17
+
+        expected_href = '/api/smth'
+        expected_requests_count = 1
+        expected_response_time_sum = 0.17
+        expected_max_response_time = 0.17
+        expected_response_time_avg = 0.17
+        expected_all_responses_time = [0.17]
+
+        log_analyzer.create_or_update_intermediate_item(intermediate_data, href, response_time)
+
+        self.assertEqual(len(intermediate_data), 1)
+        self.assertIn(expected_href, intermediate_data)
+
+        item = intermediate_data[expected_href]
+
+        self.assertEqual(item['href'], expected_href)
+        self.assertEqual(item['requests_count'], expected_requests_count)
+        self.assertAlmostEqual(item['response_time_sum'], expected_response_time_sum)
+        self.assertAlmostEqual(item['max_response_time'], expected_max_response_time)
+        self.assertAlmostEqual(item['response_time_avg'], expected_response_time_avg)
+        self.assertListEqual(item['all_responses_time'], expected_all_responses_time)
+
+    def test_update_intermediate_item(self):
+        intermediate_data = {
+            '/api/smth': {
+                'href': '/api/smth',
+                'requests_count': 1,
+                'max_response_time': 0.17,
+                'response_time_avg': 0.17,
+                'response_time_sum': 0.17,
+                'all_responses_time': [0.17]
+            }
+        }
+
+        href = '/api/smth'
+        response_time = 0.25
+
+        expected_href = '/api/smth'
+        expected_requests_count = 2
+        expected_response_time_sum = 0.42
+        expected_max_response_time = 0.25
+        expected_response_time_avg = 0.21
+        expected_all_responses_time = [0.17, 0.25]
+
+        log_analyzer.create_or_update_intermediate_item(intermediate_data, href, response_time)
+
+        self.assertEqual(len(intermediate_data), 1)
+        self.assertIn(expected_href, intermediate_data)
+
+        item = intermediate_data[expected_href]
+
+        self.assertEqual(item['href'], expected_href)
+        self.assertEqual(item['requests_count'], expected_requests_count)
+        self.assertAlmostEqual(item['response_time_sum'], expected_response_time_sum)
+        self.assertAlmostEqual(item['max_response_time'], expected_max_response_time)
+        self.assertAlmostEqual(item['response_time_avg'], expected_response_time_avg)
+        self.assertListEqual(item['all_responses_time'], expected_all_responses_time)
+
 
 class TestArgumentParse(unittest.TestCase):
     def test_positional_params(self):
