@@ -102,6 +102,7 @@ def create_default_logger():
 def handle_uncaught_exceptions(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
         logger.info('Interrupted by user')
+        return 
 
     logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
 
