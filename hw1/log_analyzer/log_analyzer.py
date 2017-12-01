@@ -258,6 +258,17 @@ def parse_log_record(log_line):
     return href, request_time
 
 
+def median(values_list):
+    if not values_list:
+        return None
+
+    sorted_list = sorted(values_list)
+    size = len(sorted_list)
+    half_size = size / 2
+
+    return sorted_list[half_size] if size % 2 else (sorted_list[half_size - 1] + sorted_list[half_size]) / 2.0
+
+
 ####################################
 # Utils
 ####################################
@@ -371,17 +382,6 @@ def is_up_to_date(latest_log, latest_report):
 def is_gzip_file(file_path):
     with open(file_path, 'rb') as f:
         return f.read(2) == GZIP_FILE_SIG
-
-
-def median(values_list):
-    if not values_list:
-        return None
-
-    sorted_list = sorted(values_list)
-    size = len(sorted_list)
-    half_size = size / 2
-
-    return sorted_list[half_size] if size % 2 else (sorted_list[half_size - 1] + sorted_list[half_size]) / 2
 
 
 def render_template(template_path, to, data):
