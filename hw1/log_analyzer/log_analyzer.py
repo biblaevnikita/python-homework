@@ -195,6 +195,7 @@ def create_or_update_intermediate_item(intermediate_data, href, response_time):
                 'requests_count': 0,
                 'response_time_sum': 0,
                 'max_response_time': response_time,
+                'response_time_avg': 0,
                 'all_responses_time': []}
         intermediate_data[href] = item
 
@@ -212,7 +213,7 @@ def create_result_item(intermediate_item, total_records, total_time):
     time_avg = intermediate_item['response_time_avg']
     time_max = intermediate_item['max_response_time']
     time_med = median(intermediate_item['all_responses_time'])
-    time_perc = intermediate_item['response_time_sum'] / total_time
+    time_perc = intermediate_item['response_time_sum'] / total_time * 100
     time_sum = intermediate_item['response_time_sum']
 
     return {
