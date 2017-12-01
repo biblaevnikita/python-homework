@@ -102,7 +102,7 @@ def create_default_logger():
 def handle_uncaught_exceptions(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
         logger.info('Interrupted by user')
-        return 
+        return
 
     logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
 
@@ -230,16 +230,10 @@ def create_result_item(intermediate_item, total_records, total_time):
 
 
 def get_log_records(log_path):
-    open_fn = open
-    if is_gzip_file(log_path):
-        open_fn = gzip.open
+    open_fn = gzip.open if is_gzip_file(log_path) else open
 
     with open_fn(log_path, 'r') as log_file:
-        while True:
-            line = log_file.readline()
-            if not line:
-                break
-
+        for line in log_file:
             record = parse_log_record(line)
             if not record:
                 continue
