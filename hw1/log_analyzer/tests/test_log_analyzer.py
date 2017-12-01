@@ -174,6 +174,22 @@ class TestAnalyze(unittest.TestCase):
         self.assertAlmostEqual(item['response_time_avg'], expected_response_time_avg)
         self.assertListEqual(item['all_responses_time'], expected_all_responses_time)
 
+    def test_median_for_an_even_number_of_items(self):
+        data = [1, 12, 4, 15, 3, 2]
+        self.assertAlmostEqual(log_analyzer.median(data), 3.5)
+
+    def test_median_for_an_odd_number_of_items(self):
+        data = [7, 10, 22, 3, 1, 1, 15]
+        self.assertEqual(log_analyzer.median(data), 7)
+
+    def test_median_for_two_items(self):
+        data = [15, 33]
+        self.assertEqual(log_analyzer.median(data), 24)
+
+    def test_median_for_one_item(self):
+        data = [6]
+        self.assertEqual(log_analyzer.median(data), 6)
+
 
 class TestArgumentParse(unittest.TestCase):
     def test_positional_params(self):
