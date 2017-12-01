@@ -65,12 +65,12 @@ class TestAnalyze(unittest.TestCase):
         self.assertIsNone(record)
 
     def test_parse_log_file_plain(self):
-        plain_log_file = './test_data/log_plain'
+        plain_log_file = os.path.join(os.path.dirname(__file__), 'test_data', 'log_plain')
         records = list(log_analyzer.get_log_records(plain_log_file))
         self.assertEqual(len(records), 2)
 
     def test_parse_log_file_gzip(self):
-        gzip_log_file = './test_data/log_gzip.gz'
+        gzip_log_file = os.path.join(os.path.dirname(__file__), 'test_data', 'log_gzip.gz')
         records = list(log_analyzer.get_log_records(gzip_log_file))
         self.assertEqual(len(records), 2)
 
