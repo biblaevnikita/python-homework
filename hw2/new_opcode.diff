@@ -1,16 +1,15 @@
-From 67629f8bd6c959d0d8cfa5c0125d2efb509ca5b2 Mon Sep 17 00:00:00 2001
-From: =?UTF-8?q?=D0=9D=D0=B8=D0=BA=D0=B8=D1=82=D0=B0=20=D0=91=D0=B8=D0=B1?=
- =?UTF-8?q?=D0=BB=D0=B0=D0=B5=D0=B2?= <biblaev@playrix.com>
-Date: Sat, 2 Dec 2017 23:33:09 +0300
-Subject: [PATCH] LOAD_OTUS
+From 993e82bb698a2ed6e218e061bd80a91dae2f8b55 Mon Sep 17 00:00:00 2001
+From: Nikita Biblaev <biblaev@playrix.com>
+Date: Mon, 4 Dec 2017 15:43:47 +0300
+Subject: [PATCH] new_opcode
 
 ---
  Include/opcode.h        |  2 ++
  Lib/opcode.py           |  1 +
- Python/ceval.c          | 20 ++++++++++++++++++++
+ Python/ceval.c          | 17 ++++++++++++++++-
  Python/opcode_targets.h |  2 +-
- Python/peephole.c       | 10 ++++++++++
- 5 files changed, 34 insertions(+), 1 deletion(-)
+ Python/peephole.c       |  8 ++++++++
+ 5 files changed, 28 insertions(+), 2 deletions(-)
 
 diff --git a/Include/opcode.h b/Include/opcode.h
 index 9ed5487..2f877aa 100644
@@ -37,36 +36,33 @@ index e403365..d2a1229 100644
  
  del def_op, name_op, jrel_op, jabs_op
 diff --git a/Python/ceval.c b/Python/ceval.c
-index 4e4adc2..caf5651 100644
+index 4e4adc2..0fba83e 100644
 --- a/Python/ceval.c
 +++ b/Python/ceval.c
-@@ -1231,6 +1231,26 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
+@@ -1231,7 +1231,22 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
              PUSH(x);
              FAST_DISPATCH();
          }
+-
 +        TARGET(LOAD_OTUS)
 +        {
 +            x = GETLOCAL(0);
-+
-+			if (x == NULL) {
-+                format_exc_check_arg(PyExc_UnboundLocalError,
-+                UNBOUNDLOCAL_ERROR_MSG,
-+                PyTuple_GetItem(co->co_varnames, 0));
-+                break;
-+			}
-+			Py_INCREF(x);
-+			PUSH(x);
-+
-+            x = GETITEM(consts, oparg);
-+            Py_INCREF(x);
-+            PUSH(x);
-+            FAST_DISPATCH();
-+
++            if (x != NULL) {
++                Py_INCREF(x);
++                PUSH(x);
++                x = GETITEM(consts, oparg);
++                Py_INCREF(x);
++                PUSH(x);
++                FAST_DISPATCH();
++            }
++            format_exc_check_arg(PyExc_UnboundLocalError,
++            UNBOUNDLOCAL_ERROR_MSG,
++            PyTuple_GetItem(co->co_varnames, 0));
 +            break;
 +        }
- 
          PREDICTED_WITH_ARG(STORE_FAST);
          TARGET(STORE_FAST)
+         {
 diff --git a/Python/opcode_targets.h b/Python/opcode_targets.h
 index 95eb127..8c29b98 100644
 --- a/Python/opcode_targets.h
@@ -81,26 +77,24 @@ index 95eb127..8c29b98 100644
      &&_unknown_opcode,
      &&_unknown_opcode,
 diff --git a/Python/peephole.c b/Python/peephole.c
-index 11f6f88..f7c75c3 100644
+index 11f6f88..f1d2daa 100644
 --- a/Python/peephole.c
 +++ b/Python/peephole.c
-@@ -425,6 +425,16 @@ PyCode_Optimize(PyObject *code, PyObject* consts, PyObject *names,
+@@ -425,6 +425,14 @@ PyCode_Optimize(PyObject *code, PyObject* consts, PyObject *names,
                  cumlc = 0;
                  break;
  
 +            case LOAD_FAST:
-+                if (GETARG(codestr, i) != 0 || codestr[i+3] != LOAD_CONST)
-+                    continue;
-+                
-+                j = GETARG(codestr, i + 3);
-+                codestr[i] = LOAD_OTUS;
-+                SETARG(codestr, i, j);
-+                memset(codestr + i + 3, NOP, 3);
++                j = GETARG(codestr, i);
++                if (codestr[i+3] == LOAD_CONST && j == 0) {
++                    codestr[i+3] = LOAD_OTUS;
++                    memset(codestr+i, NOP, 3);
++                }
 +                break;
 +
                  /* Try to fold tuples of constants (includes a case for lists
                     which are only used for "in" and "not in" tests).
                     Skip over BUILD_SEQN 1 UNPACK_SEQN 1.
 -- 
-2.8.1.windows.1
+2.8.1
 
