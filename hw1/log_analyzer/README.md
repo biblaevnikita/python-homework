@@ -1,11 +1,11 @@
 # Log Analyzer
 ## Config:
 The configuration is a json file with following fields:
-* *MAX_REPORT_SIZE* - Max report size. **Required.** <br>
-* *REPORTS_DIR* - Path to directory with reports. **Required.** <br>
-* *LOGS_DIR* - Path to directory witn server logs. **Required.** <br>
-* *MONITORING_LOG_FILE* - Program log file path. *Optional.* <br>
-* *TIMESTAMP_FILE* - Path to timestamp file. *Optional.* <br>
+* *MAX_REPORT_SIZE* - Max report size. <br>
+* *REPORTS_DIR* - Path to directory with reports. <br>
+* *LOGS_DIR* - Path to directory witn server logs.<br>
+* *MONITORING_LOG_FILE* - Program log file path.<br>
+* *TIMESTAMP_FILE* - Path to timestamp file. <br>
 
 Default config:
 ```json
