@@ -197,7 +197,7 @@ def median(values_list):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(prog='Log analyzer')
+    parser = argparse.ArgumentParser()
     parser.add_argument('--config', help='Config file path')
     return parser.parse_args()
 
@@ -280,7 +280,7 @@ def main():
         logging.basicConfig(filename=monitoring_log_file, level=logging.INFO,
                             format=LOG_FORMAT, datefmt=LOG_DATE_TIME_FORMAT)
 
-    # resolving actual log
+    # resolving an actual log
     latest_log_info = get_latest_log_with_date(config['LOGS_DIR'])
     if not latest_log_info:
         logging.info('Ooops. No log files yet')
