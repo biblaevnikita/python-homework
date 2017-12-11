@@ -47,7 +47,9 @@ class InvalidFieldError(Exception):
 
 
 class RequestField(object):
-    _value_prefix = '_$'
+    __metaclass__ = abc.ABCMeta
+
+    _name_prefix = '_$'
 
     def __init__(self, required=False, nullable=False):
         self.name = None
@@ -57,91 +59,95 @@ class RequestField(object):
     def __get__(self, instance, owner):
         if not instance:
             return self
-        internal_name = self._value_prefix + self.name
-        if not hasattr(instance, internal_name):
-            raise ValueError('{} not set yet'.format(self.name))
-
-        return getattr(instance, internal_name)
+        name = self._name_prefix + self.name
+        return getattr(instance, name, None)
 
     def __set__(self, instance, value):
         if not instance:
             raise ValueError('can not set a value')
+        name = self._name_prefix + self.name
+        self.check_value(value)
+        setattr(instance, name, value)
+
+    def check_value(self, value):
+        if not value:
+            if not self.nullable:
+                raise InvalidFieldError('Value cannot be empty')
+            else:
+                return  # no need to validate null value
 
         self.validate(value)
-        setattr(instance, self._value_prefix + self.name, value)
 
-    def validate(self, json_value):
-        if json_value is None and not self.nullable:
-            raise InvalidFieldError('Required not nullable value')
+    @abc.abstractmethod
+    def validate(self, value):
+        raise NotImplementedError
 
 
 class CharField(RequestField):
-    def validate(self, json_value):
-        super(CharField, self).validate(json_value)
-        if not isinstance(json_value, basestring):
+    def validate(self, value):
+        if not isinstance(value, basestring):
             raise InvalidFieldError('String value required')
 
 
 class ArgumentsField(RequestField):
-    def validate(self, json_value):
-        super(ArgumentsField, self).validate(json_value)
-        if not isinstance(json_value, dict):
+    def validate(self, value):
+        if not isinstance(value, dict):
             raise InvalidFieldError('Dict value required')
 
 
 class EmailField(CharField):
-    def validate(self, json_value):
-        super(EmailField, self).validate(json_value)
-        if '@' not in json_value:
-            raise InvalidFieldError('Email value required')
+    def validate(self, value):
+        super(EmailField, self).validate(value)
+        if '@' not in value:
+            raise InvalidFieldError('Not a valid e-mail')
 
 
 class PhoneField(RequestField):
-    def validate(self, json_value):
-        super(PhoneField, self).validate(json_value)
+    error_message = 'Required a 7xxxxxxxxxx formatted string or an integer value'
 
-        if not isinstance(json_value, (int, basestring)):
-            raise InvalidFieldError('phone number must be a string or an integer')
+    def validate(self, value):
+        if not isinstance(value, (int, basestring)):
+            raise InvalidFieldError(self.error_message)
 
-        phone_number = str(json_value)
+        phone_number = str(value)
         if not phone_number.startswith('7'):
-            raise InvalidFieldError('phone number must starts with "7"')
+            raise InvalidFieldError(self.error_message)
         if len(phone_number) != 11:
-            raise InvalidFieldError('phone number must be 11 chars length')
+            raise InvalidFieldError(self.error_message)
 
 
-class DateField(RequestField):
-    def validate(self, json_value):
-        super(DateField, self).validate(json_value)
+class DateField(CharField):
+    def validate(self, value):
+        super(DateField, self).validate(value)
         try:
-            datetime.datetime.strptime(json_value, '%d.%m.%Y')
+            datetime.datetime.strptime(value, '%d.%m.%Y')
         except ValueError:
             raise InvalidFieldError('Required DD.MM.YYYY date string')
 
 
 class BirthDayField(DateField):
-    def validate(self, json_value):
-        super(BirthDayField, self).validate(json_value)
-        date = datetime.datetime.strptime(json_value, '%d.%m.%Y')
+    def validate(self, value):
+        super(BirthDayField, self).validate(value)
+        date = datetime.datetime.strptime(value, '%d.%m.%Y')
         now = datetime.datetime.now()
         if now.year - date.year > 70:
             raise InvalidFieldError("TOO OLD!!!")
 
 
 class GenderField(RequestField):
-    def validate(self, json_value):
-        super(GenderField, self).validate(json_value)
-        if not isinstance(json_value, int) or json_value not in GENDERS:
-            raise InvalidFieldError('Gender must be an integer in range [0,2]')
+    def validate(self, value):
+        if not isinstance(value, int) or value not in GENDERS:
+            raise InvalidFieldError('Required an integer value in range [0,2]')
 
 
 class ClientIDsField(RequestField):
-    def validate(self, json_value):
-        super(ClientIDsField, self).validate(json_value)
-        if not isinstance(json_value, list):
-            raise InvalidFieldError('ClientIDs must be a list of integers')
-        if any((not isinstance(item, int) for item in json_value)):
-            raise InvalidFieldError('ClientIDs must be a list of integers')
+    error_message = 'Required a list of an integers'
+
+    def validate(self, value):
+        if not isinstance(value, list):
+            raise InvalidFieldError(self.error_message)
+        if any((not isinstance(item, int) for item in value)):
+            raise InvalidFieldError(self.error_message)
 
 
 class RequestMeta(type):
@@ -190,11 +196,6 @@ class ClientsInterestsRequest(RequestObject):
     client_ids = ClientIDsField(required=True)
     date = DateField(required=False, nullable=True)
 
-    def validate(self):
-        super(ClientsInterestsRequest, self).validate()
-        if not self.client_ids:
-            raise InvalidRequestError('client_ids must be non empty')
-
 
 class OnlineScoreRequest(RequestObject):
     first_name = CharField(required=False, nullable=True)
@@ -212,15 +213,15 @@ class OnlineScoreRequest(RequestObject):
         super(OnlineScoreRequest, self).validate()
         required_pairs = [
             ("first_name", "last_name"),
-            ("phone", "email"),
-            ("gender", "birthday")
+            ("email", "phone"),
+            ("birthday", "gender")
         ]
         non_empty_fields = self.non_empty_fields
         if not any(f in non_empty_fields and s in non_empty_fields for f, s in required_pairs):
             raise InvalidRequestError('Required at least one pair: '
                                       '("first_name", "last_name"), '
-                                      '("phone", "email"), '
-                                      '("gender", "birthday")')
+                                      '("email", "phone"), '
+                                      '("birthday","gender")')
 
 
 class MethodRequest(RequestObject):
