@@ -177,6 +177,9 @@ class RequestObject(object):
     def __init__(self, **kwargs):
         kwargs = kwargs or {}
         for name, field in self._fields.iteritems():
+            if name not in kwargs and field.required:
+                raise InvalidRequestError('Field "{}" required'.format(name))
+
             value = kwargs.get(name, None)
             try:
                 setattr(self, name, value)
@@ -186,10 +189,7 @@ class RequestObject(object):
         self.validate()
 
     def validate(self):
-        for name, field in self._fields.iteritems():
-            value = getattr(self, name)
-            if value is None and field.required:
-                raise InvalidRequestError('Field "{}" required')
+        pass
 
 
 class ClientsInterestsRequest(RequestObject):
