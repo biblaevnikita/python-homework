@@ -42,7 +42,7 @@ class InvalidRequestError(Exception):
     pass
 
 
-class BadFieldError(Exception):
+class InvalidFieldError(Exception):
     pass
 
 
@@ -72,28 +72,28 @@ class RequestField(object):
 
     def validate(self, json_value):
         if json_value is None and not self.nullable:
-            raise BadFieldError('Required not nullable value')
+            raise InvalidFieldError('Required not nullable value')
 
 
 class CharField(RequestField):
     def validate(self, json_value):
         super(CharField, self).validate(json_value)
         if not isinstance(json_value, basestring):
-            raise BadFieldError('String value required')
+            raise InvalidFieldError('String value required')
 
 
 class ArgumentsField(RequestField):
     def validate(self, json_value):
         super(ArgumentsField, self).validate(json_value)
         if not isinstance(json_value, dict):
-            raise BadFieldError('Dict value required')
+            raise InvalidFieldError('Dict value required')
 
 
 class EmailField(CharField):
     def validate(self, json_value):
         super(EmailField, self).validate(json_value)
         if '@' not in json_value:
-            raise BadFieldError('Email value required')
+            raise InvalidFieldError('Email value required')
 
 
 class PhoneField(RequestField):
@@ -101,13 +101,13 @@ class PhoneField(RequestField):
         super(PhoneField, self).validate(json_value)
 
         if not isinstance(json_value, (int, basestring)):
-            raise BadFieldError('phone number must be a string or an integer')
+            raise InvalidFieldError('phone number must be a string or an integer')
 
         phone_number = str(json_value)
         if not phone_number.startswith('7'):
-            raise BadFieldError('phone number must starts with "7"')
+            raise InvalidFieldError('phone number must starts with "7"')
         if len(phone_number) != 11:
-            raise BadFieldError('phone number must be 11 chars length')
+            raise InvalidFieldError('phone number must be 11 chars length')
 
 
 class DateField(RequestField):
@@ -116,7 +116,7 @@ class DateField(RequestField):
         try:
             datetime.datetime.strptime(json_value, '%d.%m.%Y')
         except ValueError:
-            raise BadFieldError('Required DD.MM.YYYY date string')
+            raise InvalidFieldError('Required DD.MM.YYYY date string')
 
 
 class BirthDayField(DateField):
@@ -125,23 +125,23 @@ class BirthDayField(DateField):
         date = datetime.datetime.strptime(json_value, '%d.%m.%Y')
         now = datetime.datetime.now()
         if now.year - date.year > 70:
-            raise BadFieldError("TOO OLD!!!")
+            raise InvalidFieldError("TOO OLD!!!")
 
 
 class GenderField(RequestField):
     def validate(self, json_value):
         super(GenderField, self).validate(json_value)
         if not isinstance(json_value, int) or json_value not in GENDERS:
-            raise BadFieldError('Gender must be an integer in range [0,2]')
+            raise InvalidFieldError('Gender must be an integer in range [0,2]')
 
 
 class ClientIDsField(RequestField):
     def validate(self, json_value):
         super(ClientIDsField, self).validate(json_value)
         if not isinstance(json_value, list):
-            raise BadFieldError('ClientIDs must be a list of integers')
+            raise InvalidFieldError('ClientIDs must be a list of integers')
         if any((not isinstance(item, int) for item in json_value)):
-            raise BadFieldError('ClientIDs must be a list of integers')
+            raise InvalidFieldError('ClientIDs must be a list of integers')
 
 
 class RequestMeta(type):
@@ -174,7 +174,7 @@ class RequestObject(object):
             value = kwargs.get(name, None)
             try:
                 setattr(self, name, value)
-            except BadFieldError as field_error:
+            except InvalidFieldError as field_error:
                 raise InvalidRequestError('Bad value for field "{}". {}'.format(name, field_error.message))
 
         self.validate()
