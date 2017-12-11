@@ -293,10 +293,12 @@ def clients_interests_handler(request, ctx, store):
     except InvalidRequestError as e:
         return e.message, INVALID_REQUEST
 
-    ctx['nclients'] = len(interests_requests.client_ids)
+    client_ids = set(interests_requests.client_ids)
+
+    ctx['nclients'] = len(client_ids)
 
     response = {}
-    for cid in interests_requests.client_ids:
+    for cid in client_ids:
         response[str(cid)] = scoring.get_interests(store, cid)
 
     return response, OK
