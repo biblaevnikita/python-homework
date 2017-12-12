@@ -49,8 +49,6 @@ class InvalidFieldError(Exception):
 class RequestField(object):
     __metaclass__ = abc.ABCMeta
 
-    _name_prefix = '_$'
-
     def __init__(self, required=False, nullable=False):
         self.name = None
         self.required = required
@@ -59,15 +57,13 @@ class RequestField(object):
     def __get__(self, instance, owner):
         if not instance:
             return self
-        name = self._name_prefix + self.name
-        return getattr(instance, name, None)
+        return instance.__dict__.get(self.name)
 
     def __set__(self, instance, value):
         if not instance:
             raise ValueError('can not set a value')
-        name = self._name_prefix + self.name
         self.check_value(value)
-        setattr(instance, name, value)
+        instance.__dict__[self.name] = value
 
     def check_value(self, value):
         if not value:
