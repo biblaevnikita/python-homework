@@ -152,7 +152,7 @@ class RequestMeta(type):
         fields = {}
 
         # inheritance support
-        for base in bases:
+        for base in cls.mro()[::-1]:
             if not isinstance(base, RequestMeta) or not hasattr(base, '_fields'):
                 continue
             fields.update(base._fields)
