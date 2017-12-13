@@ -124,9 +124,11 @@ class DateField(CharField):
 class BirthDayField(DateField):
     def validate(self, value):
         super(BirthDayField, self).validate(value)
-        date = datetime.datetime.strptime(value, '%d.%m.%Y')
-        now = datetime.datetime.now()
-        if now.year - date.year > 70:
+        birth_date = datetime.datetime.strptime(value, '%d.%m.%Y')
+        max_date = datetime.date(year=birth_date.year + 70, month=birth_date.month, day=birth_date.day)
+        today = datetime.date.today()
+
+        if today > max_date:
             raise InvalidFieldError("TOO OLD!!!")
 
 
