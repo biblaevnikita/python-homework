@@ -62,59 +62,64 @@ class RequestField(object):
     def __set__(self, instance, value):
         if not instance:
             raise ValueError('can not set a value')
-        self.check_value(value)
         instance.__dict__[self.name] = value
 
-    def check_value(self, value):
+    def has_value(self, instance):
+        if not instance:
+            raise ValueError('instance required')
+
+        return self.name in instance.__dict__
+
+    def validate(self, value):
         if not value:
             if not self.nullable:
                 raise InvalidFieldError('Value cannot be empty')
             else:
                 return  # no need to validate null value
 
-        self.validate(value)
+        self.validate_value(value)
 
     @abc.abstractmethod
-    def validate(self, value):
+    def validate_value(self, value):
         raise NotImplementedError
 
 
 class CharField(RequestField):
-    def validate(self, value):
+    def validate_value(self, value):
         if not isinstance(value, basestring):
             raise InvalidFieldError('String value required')
 
 
 class ArgumentsField(RequestField):
-    def validate(self, value):
+    def validate_value(self, value):
         if not isinstance(value, dict):
             raise InvalidFieldError('Dict value required')
 
 
 class EmailField(CharField):
-    def validate(self, value):
-        super(EmailField, self).validate(value)
+    def validate_value(self, value):
+        super(EmailField, self).validate_value(value)
         if '@' not in value:
             raise InvalidFieldError('Not a valid e-mail')
 
 
 class PhoneField(RequestField):
-    error_message = 'Required a 7xxxxxxxxxx formatted string or an integer value'
+    error_message = 'Required a 79xxxxxxxxx formatted string or an integer value'
 
-    def validate(self, value):
+    def validate_value(self, value):
         if not isinstance(value, (int, basestring)):
             raise InvalidFieldError(self.error_message)
 
         phone_number = str(value)
-        if not phone_number.startswith('7'):
+        if not phone_number.startswith('79'):
             raise InvalidFieldError(self.error_message)
         if len(phone_number) != 11:
             raise InvalidFieldError(self.error_message)
 
 
 class DateField(CharField):
-    def validate(self, value):
-        super(DateField, self).validate(value)
+    def validate_value(self, value):
+        super(DateField, self).validate_value(value)
         try:
             datetime.datetime.strptime(value, '%d.%m.%Y')
         except ValueError:
@@ -122,16 +127,18 @@ class DateField(CharField):
 
 
 class BirthDayField(DateField):
-    def validate(self, value):
-        super(BirthDayField, self).validate(value)
-        date = datetime.datetime.strptime(value, '%d.%m.%Y')
-        now = datetime.datetime.now()
-        if now.year - date.year > 70:
+    def validate_value(self, value):
+        super(BirthDayField, self).validate_value(value)
+        birth_date = datetime.datetime.strptime(value, '%d.%m.%Y')
+        max_date = datetime.date(year=birth_date.year + 70, month=birth_date.month, day=birth_date.day)
+        today = datetime.date.today()
+
+        if today > max_date:
             raise InvalidFieldError("TOO OLD!!!")
 
 
 class GenderField(RequestField):
-    def validate(self, value):
+    def validate_value(self, value):
         if not isinstance(value, int) or value not in GENDERS:
             raise InvalidFieldError('Required an integer value in range [0,2]')
 
@@ -139,7 +146,7 @@ class GenderField(RequestField):
 class ClientIDsField(RequestField):
     error_message = 'Required a list of an integers'
 
-    def validate(self, value):
+    def validate_value(self, value):
         if not isinstance(value, list):
             raise InvalidFieldError(self.error_message)
         if any((not isinstance(item, int) for item in value)):
@@ -173,19 +180,19 @@ class RequestObject(object):
     def __init__(self, **kwargs):
         kwargs = kwargs or {}
         for name, field in self._fields.iteritems():
-            if name not in kwargs and field.required:
-                raise InvalidRequestError('Field "{}" required'.format(name))
-
-            value = kwargs.get(name, None)
-            try:
-                setattr(self, name, value)
-            except InvalidFieldError as field_error:
-                raise InvalidRequestError('Bad value for field "{}". {}'.format(name, field_error.message))
-
-        self.validate()
+            if name in kwargs:
+                setattr(self, name, kwargs[name])
 
     def validate(self):
-        pass
+        for name, field in self._fields.iteritems():
+            if not field.has_value(self) and field.required:
+                raise InvalidRequestError('Field "{}" required'.format(name))
+
+            field_value = getattr(self, name, None)
+            try:
+                field.validate(field_value)
+            except InvalidFieldError as field_error:
+                raise InvalidRequestError('Bad value for field "{}". {}'.format(name, field_error.message))
 
 
 class ClientsInterestsRequest(RequestObject):
@@ -201,10 +208,6 @@ class OnlineScoreRequest(RequestObject):
     birthday = BirthDayField(required=False, nullable=True)
     gender = GenderField(required=False, nullable=True)
 
-    @property
-    def non_empty_fields(self):
-        return [k for k in self._fields.iterkeys() if getattr(self, k)]
-
     def validate(self):
         super(OnlineScoreRequest, self).validate()
         required_pairs = [
@@ -218,6 +221,10 @@ class OnlineScoreRequest(RequestObject):
                                       '("first_name", "last_name"), '
                                       '("email", "phone"), '
                                       '("birthday","gender")')
+
+    @property
+    def non_empty_fields(self):
+        return set([name for name in self._fields if getattr(self, name, None)])
 
 
 class MethodRequest(RequestObject):
@@ -248,8 +255,9 @@ def method_handler(request, ctx, store):
         'clients_interests': clients_interests_handler
     }
     body = request.get('body', None)
+    request = MethodRequest(**body)
     try:
-        request = MethodRequest(**body)
+        request.validate()
     except InvalidRequestError as e:
         return e.message, INVALID_REQUEST
 
@@ -263,8 +271,9 @@ def method_handler(request, ctx, store):
 
 
 def online_score_handler(request, ctx, store):
+    score_request = OnlineScoreRequest(**request.arguments)
     try:
-        score_request = OnlineScoreRequest(**request.arguments)
+        score_request.validate()
     except InvalidRequestError as e:
         return e.message, INVALID_REQUEST
 
@@ -284,12 +293,13 @@ def online_score_handler(request, ctx, store):
 
 
 def clients_interests_handler(request, ctx, store):
+    interests_request = ClientsInterestsRequest(**request.arguments)
     try:
-        interests_requests = ClientsInterestsRequest(**request.arguments)
+        interests_request.validate()
     except InvalidRequestError as e:
         return e.message, INVALID_REQUEST
 
-    client_ids = set(interests_requests.client_ids)
+    client_ids = set(interests_request.client_ids)
 
     ctx['nclients'] = len(client_ids)
 
