@@ -213,12 +213,9 @@ class TestConfig(unittest.TestCase):
             'REPORTS_DIR': self.reports_dir,
             'LOGS_DIR': self.logs_dir,
             'MONITORING_LOG_FILE': os.path.join(self.temp_dir, 'monitoring_log.txt'),
-            'TIMESTAMP_FILE': os.path.join(self.temp_dir, 'log_analyzer.ts')
+            'TIMESTAMP_FILE': os.path.join(self.temp_dir, 'log_analyzer.ts'),
+            'ERRORS_LIMIT': 0.5
         }
-
-    def test_returns_default_if_no_path(self):
-        conf = log_analyzer.get_config(None)
-        self.assertEqual(conf, log_analyzer.DEFAULT_CONFIG)
 
     def test_validation_failed_if_no_report_size(self):
         del self.full_config['MAX_REPORT_SIZE']
@@ -261,7 +258,13 @@ class TestConfig(unittest.TestCase):
         self.assertRaises(ValueError, log_analyzer.validate_config, self.full_config)
 
     def test_validation(self):
-        log_analyzer.validate_config(self.full_config)
+        exc = None
+        try:
+            log_analyzer.validate_config(self.full_config)
+        except Exception as e:
+            exc = e
+
+        self.assertIsNone(exc)
 
     @classmethod
     def tearDownClass(cls):

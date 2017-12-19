@@ -1,4 +1,3 @@
-import sys
 import os
 import logging
 import json
@@ -6,6 +5,7 @@ import re
 import time
 import gzip
 import argparse
+import io
 from datetime import datetime
 from collections import namedtuple
 from string import Template
@@ -13,25 +13,8 @@ from string import Template
 ####################################
 # Constants
 ####################################
-DEFAULT_CONFIG = {
-    'MAX_REPORT_SIZE': 1000,
-    'REPORTS_DIR': "./reports",
-    'LOGS_DIR': "./log"
-}
-
-LOG_FORMAT = '[%(asctime)s] %(levelname).1s %(message)s'
-LOG_DATE_TIME_FORMAT = '%Y.%m.%d %H:%M:%S'
-
-REPORT_NAME_PATTERN = 'report-{}.html'
-REPORT_FILENAME_RE = re.compile(r'^report-(?P<date>\d{4}\.\d{2}\.\d{2})\.html')
-LOG_FILENAME_RE = re.compile(r'^nginx-access-ui\.log-(?P<date>\d{8})')
-
-REPORT_RE_DATE_GROUP_NAME = LOG_RE_DATE_GROUP_NAME = 'date'
-
-REPORT_FILENAME_DATE_FORMAT = '%Y.%m.%d'
-LOG_FILENAME_DATE_FORMAT = '%Y%m%d'
-
-REPORT_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'template.html')
+DEFAULT_CONFIG_PATH = './default.conf'
+REPORT_TEMPLATE_PATH = './template.html'
 
 LOG_RECORD_RE = re.compile(
     '^'
@@ -52,26 +35,15 @@ LOG_RECORD_RE = re.compile(
 
 DateNamedFileInfo = namedtuple('DateNamedFileInfo', ['file_path', 'file_date'])
 
-logging.basicConfig(stream=sys.stdout, level=logging.INFO,
-                    format=LOG_FORMAT, datefmt=LOG_DATE_TIME_FORMAT)
-
 ####################################
 # Config
 ####################################
 
 
-def get_config(conf_path=None):
-    if not conf_path:
-        return DEFAULT_CONFIG
-
-    with open(conf_path, 'r') as conf:
-        config = json.load(conf)
-
-    for key, value in DEFAULT_CONFIG.iteritems():
-        if key not in config:
-            config[key] = value
-
-    return config
+def load_conf(conf_path):
+    with open(conf_path, 'rb') as conf_file:
+        conf = json.load(conf_file, encoding='utf8')
+    return conf
 
 
 def validate_config(config):
@@ -87,11 +59,16 @@ def validate_config(config):
     if not report_dir or not isinstance(logs_dir, basestring):
         raise ValueError('REPORTS_DIR must be a path string')
 
+    timestamp_file = config.get('TIMESTAMP_FILE')
+    if not timestamp_file or not isinstance(logs_dir, basestring):
+        raise ValueError('TIMESTAMP_FILE must be a file path')
+
+    errors_limit = config.get("ERRORS_LIMIT")
+    if not isinstance(errors_limit, (float, int)) or not (0 <= errors_limit <= 1):
+        raise ValueError('ERRORS_LIMIT must be a decimal string in range [0,1]')
+
     if 'MONITORING_LOG_FILE' in config and not config.get('MONITORING_LOG_FILE'):
         raise ValueError('MONITORING_LOG_FILE must be a file path')
-
-    if 'TIMESTAMP_FILE' in config and not config.get('TIMESTAMP_FILE'):
-        raise ValueError('TIMESTAMP_FILE must be a file path')
 
 
 ####################################
@@ -111,7 +88,7 @@ def create_report(records, max_records):
 
     sorted_values = sorted(intermediate_data.itervalues(), key=lambda i: i['response_time_avg'], reverse=True)
     if len(sorted_values) > max_records:
-        del sorted_values[max_records-1:]
+        sorted_values = sorted_values[:max_records]
 
     return [create_result_item(intermediate_item, total_records, total_time) for intermediate_item in sorted_values]
 
@@ -156,16 +133,23 @@ def create_result_item(intermediate_item, total_records, total_time):
     }
 
 
-def get_log_records(log_path):
-    open_fn = gzip.open if is_gzip_file(log_path) else open
-
-    with open_fn(log_path, 'r') as log_file:
+def get_log_records(log_path, errors_limit=None):
+    open_fn = gzip.open if is_gzip_file(log_path) else io.open
+    errors = 0
+    records = 0
+    with open_fn(log_path, mode='rb') as log_file:
         for line in log_file:
+            records += 1
+            line = line.decode('utf8')
             record = parse_log_record(line)
             if not record:
+                errors += 1
                 continue
 
             yield record
+
+    if errors_limit is not None and records > 0 and errors / float(records) > errors_limit:
+        raise Exception('Errors limit exceeded')
 
 
 def parse_log_record(log_line):
@@ -195,6 +179,12 @@ def median(values_list):
 # Utils
 ####################################
 
+def setup_logger(log_path):
+    if log_path and not os.path.isdir(log_path):
+        os.makedirs(log_path)
+    logging.basicConfig(filename=log_path, level=logging.INFO,
+                        format='[%(asctime)s] %(levelname).1s %(message)s', datefmt='%Y.%m.%d %H:%M:%S')
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -202,22 +192,18 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_latest_log_with_date(logs_dir):
-    return get_latest_date_named_file_info(logs_dir, LOG_FILENAME_DATE_FORMAT, LOG_FILENAME_RE, LOG_RE_DATE_GROUP_NAME)
-
-
-def get_latest_date_named_file_info(files_dir, date_format, date_re, date_re_group_name):
+def get_latest_log_info(files_dir):
     if not os.path.isdir(files_dir):
         return None
 
     latest_file_info = None
     for filename in os.listdir(files_dir):
-        match = date_re.match(filename)
+        match = re.match(r'^nginx-access-ui\.log-(?P<date>\d{8})', filename)
         if not match:
             continue
 
-        date_string = match.groupdict()[date_re_group_name]
-        file_date = datetime.strptime(date_string, date_format)
+        date_string = match.groupdict()['date']
+        file_date = datetime.strptime(date_string, "%Y%m%d")
 
         if not latest_file_info or file_date > latest_file_info.file_date:
             latest_file_info = DateNamedFileInfo(file_path=os.path.join(files_dir, filename),
@@ -230,11 +216,6 @@ def is_gzip_file(file_path):
     return file_path.split('.')[-1] == 'gz'
 
 
-def reset_logging():
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
-
-
 def render_template(template_path, to, data):
     if data is None:
         data = []
@@ -243,12 +224,14 @@ def render_template(template_path, to, data):
     if not os.path.isdir(target_dir):
         os.makedirs(target_dir)
 
-    with open(template_path, 'r') as template:
-        template = Template(template.read())
+    with open(template_path, 'rb') as template_file:
+        template_string = template_file.read().decode('utf8')
+        template = Template(template_string)
 
     rendered = template.safe_substitute(table_json=json.dumps(data))
 
-    with open(to, 'w') as render_target:
+    with open(to, 'wb') as render_target:
+        rendered = rendered.encode('utf8')
         render_target.write(rendered)
 
 
@@ -265,29 +248,15 @@ def write_timestamp(file_path, timestamp):
     os.utime(file_path, (a_time, timestamp))
 
 
-def main():
-    args = parse_args()
-    config = get_config(args.config)
-    validate_config(config)
-
-    # setup logger
-    monitoring_log_file = config.get('MONITORING_LOG_FILE')
-    if monitoring_log_file:
-        monitoring_log_dir = os.path.dirname(monitoring_log_file)
-        if not os.path.isdir(monitoring_log_dir):
-            os.makedirs(monitoring_log_dir)
-        reset_logging()
-        logging.basicConfig(filename=monitoring_log_file, level=logging.INFO,
-                            format=LOG_FORMAT, datefmt=LOG_DATE_TIME_FORMAT)
-
+def main(config):
     # resolving an actual log
-    latest_log_info = get_latest_log_with_date(config['LOGS_DIR'])
+    latest_log_info = get_latest_log_info(config['LOGS_DIR'])
     if not latest_log_info:
         logging.info('Ooops. No log files yet')
         return
 
-    report_date_string = latest_log_info.file_date.strftime(REPORT_FILENAME_DATE_FORMAT)
-    report_filename = REPORT_NAME_PATTERN.format(report_date_string)
+    report_date_string = latest_log_info.file_date.strftime("%Y.%m.%d")
+    report_filename = "report-{}.html".format(report_date_string)
     report_file_path = os.path.join(config['REPORTS_DIR'], report_filename)
 
     if os.path.isfile(report_file_path):
@@ -296,19 +265,28 @@ def main():
 
     # report creation
     logging.info('Collecting data from "{}"'.format(os.path.normpath(latest_log_info.file_path)))
-    log_records = get_log_records(latest_log_info.file_path)
+    log_records = get_log_records(latest_log_info.file_path, config.get('ERRORS_LIMIT'))
     report_data = create_report(log_records, config['MAX_REPORT_SIZE'])
 
     render_template(REPORT_TEMPLATE_PATH, report_file_path, report_data)
 
     logging.info('Report saved to {}'.format(os.path.normpath(report_file_path)))
 
-    if 'TIMESTAMP_FILE' in config:
-        write_timestamp(config['TIMESTAMP_FILE'], time.time())
+    write_timestamp(config['TIMESTAMP_FILE'], time.time())
 
 
 if __name__ == '__main__':
+    args = parse_args()
+
+    config = load_conf(DEFAULT_CONFIG_PATH)
+    if args.config:
+        external_config = load_conf(args.config)
+        config.update(external_config)
+    validate_config(config)
+
+    setup_logger(config.get('MONITORING_LOG_FILE'))
+
     try:
-        main()
+        main(config)
     except Exception as e:
         logging.exception('Unhandled exception:')
