@@ -57,11 +57,17 @@ class RequestField(object):
     def __get__(self, instance, owner):
         if not instance:
             return self
-        return instance.__dict__.get(self.name)
+        return self.get_value(instance)
 
     def __set__(self, instance, value):
         if not instance:
             raise ValueError('can not set a value')
+        self.set_value(instance, value)
+
+    def get_value(self, instance):
+        return instance.__dict__.get(self.name)
+
+    def set_value(self, instance, value):
         instance.__dict__[self.name] = value
 
     def has_value(self, instance):
@@ -70,7 +76,11 @@ class RequestField(object):
 
         return self.name in instance.__dict__
 
-    def validate(self, value):
+    def validate(self, instance):
+        if not self.has_value(instance) and self.required:
+            raise InvalidFieldError('Required field')
+
+        value = self.get_value(instance)
         if not value:
             if not self.nullable:
                 raise InvalidFieldError('Value cannot be empty')
@@ -185,12 +195,8 @@ class RequestObject(object):
 
     def validate(self):
         for name, field in self._fields.iteritems():
-            if not field.has_value(self) and field.required:
-                raise InvalidRequestError('Field "{}" required'.format(name))
-
-            field_value = getattr(self, name, None)
             try:
-                field.validate(field_value)
+                field.validate(self)
             except InvalidFieldError as field_error:
                 raise InvalidRequestError('Bad value for field "{}". {}'.format(name, field_error.message))
 
