@@ -46,31 +46,6 @@ def load_conf(conf_path):
     return conf
 
 
-def validate_config(config):
-    report_size = config.get('MAX_REPORT_SIZE')
-    if not report_size or not isinstance(report_size, int) or report_size < 1:
-        raise ValueError('MAX_REPORT_SIZE must be a positive integer')
-
-    logs_dir = config.get('LOGS_DIR')
-    if not logs_dir or not os.path.isdir(logs_dir) or not isinstance(logs_dir, basestring):
-        raise ValueError('LOGS_DIR must be an existing directory')
-
-    report_dir = config.get('REPORTS_DIR')
-    if not report_dir or not isinstance(logs_dir, basestring):
-        raise ValueError('REPORTS_DIR must be a path string')
-
-    timestamp_file = config.get('TIMESTAMP_FILE')
-    if not timestamp_file or not isinstance(logs_dir, basestring):
-        raise ValueError('TIMESTAMP_FILE must be a file path')
-
-    errors_limit = config.get("ERRORS_LIMIT")
-    if not isinstance(errors_limit, (float, int)) or not (0 <= errors_limit <= 1):
-        raise ValueError('ERRORS_LIMIT must be a decimal string in range [0,1]')
-
-    if 'MONITORING_LOG_FILE' in config and not config.get('MONITORING_LOG_FILE'):
-        raise ValueError('MONITORING_LOG_FILE must be a file path')
-
-
 ####################################
 # Analyzing
 ####################################
@@ -87,8 +62,7 @@ def create_report(records, max_records):
         create_or_update_intermediate_item(intermediate_data, href, response_time)
 
     sorted_values = sorted(intermediate_data.itervalues(), key=lambda i: i['response_time_avg'], reverse=True)
-    if len(sorted_values) > max_records:
-        sorted_values = sorted_values[:max_records]
+    sorted_values = sorted_values[:max_records]
 
     return [create_result_item(intermediate_item, total_records, total_time) for intermediate_item in sorted_values]
 
@@ -198,7 +172,7 @@ def get_latest_log_info(files_dir):
 
     latest_file_info = None
     for filename in os.listdir(files_dir):
-        match = re.match(r'^nginx-access-ui\.log-(?P<date>\d{8})', filename)
+        match = re.match(r'^nginx-access-ui\.log-(?P<date>\d{8})(\.gz)?$', filename)
         if not match:
             continue
 
@@ -260,6 +234,7 @@ def main(config):
     report_file_path = os.path.join(config['REPORTS_DIR'], report_filename)
 
     if os.path.isfile(report_file_path):
+        write_timestamp(config['TIMESTAMP_FILE'], time.time())
         logging.info("Looks like everything is up-to-date")
         return
 
@@ -282,7 +257,6 @@ if __name__ == '__main__':
     if args.config:
         external_config = load_conf(args.config)
         config.update(external_config)
-    validate_config(config)
 
     setup_logger(config.get('MONITORING_LOG_FILE'))
 
