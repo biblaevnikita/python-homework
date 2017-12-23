@@ -6,6 +6,7 @@ The configuration is a json file with following fields:
 * *LOGS_DIR* - Path to directory witn server logs.<br>
 * *MONITORING_LOG_FILE* - Program log file path.<br>
 * *TIMESTAMP_FILE* - Path to timestamp file. <br>
+* *ERRORS_LIMIT* - Max percent of invalid records in the original log file. <br>
 
 Default config:
 ```json
@@ -13,6 +14,8 @@ Default config:
     "MAX_REPORT_SIZE": 1000,
     "REPORTS_DIR": "./reports",
     "LOGS_DIR": "./log",
+    "TIMESTAMP_FILE": "./log_analyzer.ts",
+    "ERRORS_LIMIT": 0.9
 }
 ```
 
