@@ -19,7 +19,7 @@ MEMCACHE_MAX_RETRIES = 3
 MEMCACHE_RETRY_TIMEOUT = 5
 MEMCACHE_CLIENT_TIMEOUT = 30
 
-FILES_PROCESSING_POOL_SIZE = 1
+FILES_PROCESSING_POOL_SIZE = 3
 LOAD_FILE_THREADS_COUNT = 10
 
 NORMAL_ERR_RATE = 0.01
@@ -148,9 +148,6 @@ def load_file(file_name, threads_count, idfa, gaid, adid, dvid, dry_run):
     total = errors = 0
     fd = gzip.open(file_name)
     for line in fd:
-        if total % 10000 == 0:
-            logging.info('[{}] {}'.format(os.path.basename(file_name), total))
-            logging.info('[{}] q{}'.format(os.path.basename(file_name), records_queue.qsize()))
         line = line.strip()
         if not line:
             continue
