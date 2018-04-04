@@ -8,6 +8,7 @@ import sys
 import time
 from Queue import Queue, Empty
 from functools import partial
+from multiprocessing import Pool as ProcessPool
 from multiprocessing.dummy import Pool as ThreadPool
 from optparse import OptionParser
 
@@ -46,16 +47,9 @@ def dot_rename(path):
     os.rename(path, os.path.join(head, "." + fn))
 
 
-def create_memc_client_pools(pool_size, idfa, gaid, adid, dvid):
-    connections = {
-        'idfa': idfa,
-        'gaid': gaid,
-        'adid': adid,
-        'dvid': dvid
-    }
-
+def create_memc_client_pools(pool_size, memc_conf):
     client_pools = {}
-    for name, address in connections.iteritems():
+    for name, address in memc_conf.iteritems():
         pool = MemcacheClientPool(pool_size, [address], socket_timeout=MEMCACHE_CLIENT_TIMEOUT)
         client_pools[name] = pool
 
@@ -133,12 +127,12 @@ def insert_records(records_queue, memc_client_pools, dry_run):
     return inserted
 
 
-def load_file(file_name, threads_count, idfa, gaid, adid, dvid, dry_run):
+def load_file(file_name, threads_count, memc_conf, dry_run):
     logging.info('Processing {}'.format(file_name))
     records_queue = Queue()
-    memc_client_pools = create_memc_client_pools(threads_count, idfa, gaid, adid, dvid)
+    memc_client_pools = create_memc_client_pools(threads_count, memc_conf)
 
-    thread_pool = ThreadPool(processes=threads_count)
+    thread_pool = ProcessPool(processes=threads_count)
     insert_results = []
     for i in range(threads_count):
         result = thread_pool.apply_async(insert_records, args=(records_queue, memc_client_pools, dry_run))
@@ -169,11 +163,10 @@ def load_file(file_name, threads_count, idfa, gaid, adid, dvid, dry_run):
     if total:
         err_rate = float(errors) / processed if processed else 100.
         if err_rate < NORMAL_ERR_RATE:
-            if err_rate < NORMAL_ERR_RATE:
-                logging.info("[{}] Acceptable error rate ({}). Load successful".format(file_name, err_rate))
-            else:
-                logging.error(
-                    "[{}] High error rate ({} > {}). Load failed".format(file_name, err_rate, NORMAL_ERR_RATE))
+            logging.info("[{}] Acceptable error rate ({}). Load successful".format(file_name, err_rate))
+        else:
+            logging.error(
+                "[{}] High error rate ({} > {}). Load failed".format(file_name, err_rate, NORMAL_ERR_RATE))
     else:
         logging.error("[{}] Empty".format(file_name))
 
@@ -182,14 +175,12 @@ def load_file(file_name, threads_count, idfa, gaid, adid, dvid, dry_run):
 
 def main(opts):
     files = sorted(glob.iglob(opts.pattern))
-
+    memc_conf = {'idfa': opts.idfa,
+                 'gaid': opts.gaid,
+                 'adid': opts.adid,
+                 'dvid': opts.dvid}
     pool = ThreadPool(processes=FILES_PROCESSING_POOL_SIZE)
-    load_file_fn = partial(load_file, threads_count=LOAD_FILE_THREADS_COUNT,
-                           idfa=opts.idfa,
-                           gaid=opts.gaid,
-                           adid=opts.adid,
-                           dvid=opts.dvid,
-                           dry_run=opts.dry)
+    load_file_fn = partial(load_file, threads_count=LOAD_FILE_THREADS_COUNT, memc_conf=memc_conf, dry_run=opts.dry)
 
     for file_name in pool.imap(load_file_fn, files):
         dot_rename(file_name)
