@@ -8,11 +8,11 @@ import sys
 import time
 from Queue import Queue, Empty
 from functools import partial
-from multiprocessing import Pool as ProcessPool
+from multiprocessing import cpu_count, Pool as ProcessPool
 from multiprocessing.dummy import Pool as ThreadPool
 from optparse import OptionParser
 
-import memcache
+from memcache import Client as MemcClient
 
 import appsinstalled_pb2
 
@@ -20,25 +20,11 @@ MEMCACHE_MAX_RETRIES = 3
 MEMCACHE_RETRY_TIMEOUT = 5
 MEMCACHE_CLIENT_TIMEOUT = 30
 
-FILES_PROCESSING_POOL_SIZE = 3
-LOAD_FILE_THREADS_COUNT = 10
+FILES_PROCESSING_POOL_SIZE = cpu_count()
+LOAD_FILE_THREADS_COUNT = 5
 
 NORMAL_ERR_RATE = 0.01
 AppsInstalled = collections.namedtuple("AppsInstalled", ["dev_type", "dev_id", "lat", "lon", "apps"])
-
-
-class MemcacheClientPool(object):
-    def __init__(self, size, *args, **kwargs):
-        self._pool = Queue()
-        for i in xrange(size):
-            client = memcache.Client(*args, **kwargs)
-            self._pool.put(client)
-
-    @contextlib.contextmanager
-    def acquire_client(self):
-        client = self._pool.get()
-        yield client
-        self._pool.put(client)
 
 
 def dot_rename(path):
@@ -47,13 +33,13 @@ def dot_rename(path):
     os.rename(path, os.path.join(head, "." + fn))
 
 
-def create_memc_client_pools(pool_size, memc_conf):
-    client_pools = {}
+def create_memc_clients(memc_conf):
+    clients = {}
     for name, address in memc_conf.iteritems():
-        pool = MemcacheClientPool(pool_size, [address], socket_timeout=MEMCACHE_CLIENT_TIMEOUT)
-        client_pools[name] = pool
+        client = MemcClient([address], socket_timeout=MEMCACHE_CLIENT_TIMEOUT)
+        clients[name] = client
 
-    return client_pools
+    return clients
 
 
 def parse_appsinstalled(line):
@@ -104,7 +90,7 @@ def insert_appsinstalled(memc_client, appsinstalled, dry_run=False):
     return success
 
 
-def insert_records(records_queue, memc_client_pools, dry_run):
+def insert_records(records_queue, memc_clients, dry_run):
     inserted = 0
     while True:
         try:
@@ -112,14 +98,13 @@ def insert_records(records_queue, memc_client_pools, dry_run):
         except Empty:
             break
 
-        client_pool = memc_client_pools.get(appsinstalled.dev_type)
+        client = memc_clients.get(appsinstalled.dev_type)
 
-        if not client_pool:
+        if not client:
             logging.error("Unknown device type: %s" % appsinstalled.dev_type)
             continue
 
-        with client_pool.acquire_client() as client:
-            ok = insert_appsinstalled(client, appsinstalled, dry_run)
+        ok = insert_appsinstalled(client, appsinstalled, dry_run)
 
         if ok:
             inserted += 1
@@ -130,12 +115,12 @@ def insert_records(records_queue, memc_client_pools, dry_run):
 def load_file(file_name, threads_count, memc_conf, dry_run):
     logging.info('Processing {}'.format(file_name))
     records_queue = Queue()
-    memc_client_pools = create_memc_client_pools(threads_count, memc_conf)
+    memc_clients = create_memc_clients(memc_conf)
 
-    thread_pool = ProcessPool(processes=threads_count)
+    thread_pool = ThreadPool(processes=threads_count)
     insert_results = []
     for i in range(threads_count):
-        result = thread_pool.apply_async(insert_records, args=(records_queue, memc_client_pools, dry_run))
+        result = thread_pool.apply_async(insert_records, args=(records_queue, memc_clients, dry_run))
         insert_results.append(result)
     thread_pool.close()
 
@@ -179,7 +164,7 @@ def main(opts):
                  'gaid': opts.gaid,
                  'adid': opts.adid,
                  'dvid': opts.dvid}
-    pool = ThreadPool(processes=FILES_PROCESSING_POOL_SIZE)
+    pool = ProcessPool(processes=FILES_PROCESSING_POOL_SIZE)
     load_file_fn = partial(load_file, threads_count=LOAD_FILE_THREADS_COUNT, memc_conf=memc_conf, dry_run=opts.dry)
 
     for file_name in pool.imap(load_file_fn, files):
