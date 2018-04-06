@@ -48,6 +48,7 @@ class InvalidFieldError(Exception):
 
 class RequestField(object):
     __metaclass__ = abc.ABCMeta
+    _empty = None
 
     def __init__(self, required=False, nullable=False):
         self.name = None
@@ -81,7 +82,7 @@ class RequestField(object):
             raise InvalidFieldError('Required field')
 
         value = self.get_value(instance)
-        if not value:
+        if value is None or value == self._empty:
             if not self.nullable:
                 raise InvalidFieldError('Value cannot be empty')
             else:
@@ -95,12 +96,16 @@ class RequestField(object):
 
 
 class CharField(RequestField):
+    _empty = ''
+
     def validate_value(self, value):
         if not isinstance(value, basestring):
             raise InvalidFieldError('String value required')
 
 
 class ArgumentsField(RequestField):
+    _empty = {}
+
     def validate_value(self, value):
         if not isinstance(value, dict):
             raise InvalidFieldError('Dict value required')
@@ -114,6 +119,7 @@ class EmailField(CharField):
 
 
 class PhoneField(RequestField):
+    _empty = ''
     error_message = 'Required a 79xxxxxxxxx formatted string or an integer value'
 
     def validate_value(self, value):
@@ -149,11 +155,12 @@ class BirthDayField(DateField):
 
 class GenderField(RequestField):
     def validate_value(self, value):
-        if not isinstance(value, int) or value not in GENDERS:
+        if not isinstance(value, int) or isinstance(value, bool) or value not in GENDERS:
             raise InvalidFieldError('Required an integer value in range [0,2]')
 
 
 class ClientIDsField(RequestField):
+    _empty = []
     error_message = 'Required a list of an integers'
 
     def validate_value(self, value):
@@ -234,7 +241,7 @@ class OnlineScoreRequest(RequestObject):
 
 
 class MethodRequest(RequestObject):
-    account = CharField(required=False, nullable=True)
+    account = CharField(required=True, nullable=True)
     login = CharField(required=True, nullable=True)
     token = CharField(required=True, nullable=True)
     arguments = ArgumentsField(required=True, nullable=True)
