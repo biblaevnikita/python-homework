@@ -318,7 +318,10 @@ def clients_interests_handler(request, ctx, store):
 
     response = {}
     for cid in client_ids:
-        response[str(cid)] = scoring.get_interests(store, cid)
+        try:
+            response[str(cid)] = scoring.get_interests(store, cid)
+        except Exception as e:
+            return ERRORS[INTERNAL_ERROR], INTERNAL_ERROR
 
     return response, OK
 
