@@ -144,7 +144,7 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
 
     def handle_read(self):
         method, uri, http_version = self._parse_request()
-
+        logging.info('{} {} {}'.format(http_version, method, uri))
         self.uri = self._clean_uri(uri)
         self.method = method
 
