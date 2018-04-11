@@ -11,17 +11,17 @@ import socket
 import sys
 import urllib
 from StringIO import StringIO
-from string import Template
 
 import asyncore_epoll as asyncore
 
 DOCUMENTS_ROOT = None
 SERVER_NAME = 'DunnoServer'
-HTTP_VERSION = 'HTTP/1.1'
+SUPPORTED_HTTP_VERSIONS = {'HTTP/1.1', 'HTTP/1.0'}
 
 OK = 200
 BAD_REQUEST = 400
 NOT_FOUND = 404
+FORBIDDEN = 403
 METHOD_NOT_SUPPORTED = 405
 INTERNAL_ERROR = 500
 HTTP_VERSION_NOT_SUPPORTED = 505
@@ -76,7 +76,8 @@ class RawContent(Content):
 
 
 class Response(object):
-    def __init__(self, status_code, status_message=None):
+    def __init__(self, status_code, http_ver, status_message=None):
+        self._http_ver = http_ver
         self._status_code = status_code
         self._status_message = status_message or RESPONSE_CODES.get(status_code)
         self._headers = {}
@@ -113,9 +114,9 @@ class Response(object):
 
         head = ''
         if self._status_message:
-            head += '{} {} {}\r\n'.format(HTTP_VERSION, self._status_code, self._status_message)
+            head += '{} {} {}\r\n'.format(self._http_ver, self._status_code, self._status_message)
         else:
-            head += '{} {}\r\n'.format(HTTP_VERSION, self._status_code)
+            head += '{} {}\r\n'.format(self._http_ver, self._status_code)
 
         head += ''.join('{}: {}\r\n'.format(k, v) for k, v in self._headers.iteritems())
         head += '\r\n'
@@ -141,67 +142,59 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
         asyncore.dispatcher_with_send.__init__(self, sock)
         self.method = None
         self.uri = None
+        self.http_version = None
 
     def handle_read(self):
         method, uri, http_version = self._parse_request()
         logging.info('{} {} {}'.format(http_version, method, uri))
         self.uri = self._clean_uri(uri)
         self.method = method
+        self.http_version = http_version
 
-        if http_version != HTTP_VERSION:
-            self.send_status_code(HTTP_VERSION_NOT_SUPPORTED)
+        if http_version not in SUPPORTED_HTTP_VERSIONS:
+            self.send_response(self.make_response(HTTP_VERSION_NOT_SUPPORTED))
             return
 
         try:
             response = self.handle_request()
         except Exception:
             logging.exception('Handle request exception')
-            self.send_status_code(INTERNAL_ERROR)
+            self.send_response(self.make_response(INTERNAL_ERROR))
         else:
             self.send_response(response)
 
     def handle_request(self):
         handler_method = getattr(self, self.method.lower(), None)
         if not handler_method:
-            return Response(METHOD_NOT_SUPPORTED)
+            return self.make_response(METHOD_NOT_SUPPORTED)
 
         return handler_method()
 
     def get(self):
-        content = self._get_content()
-        if content:
-            r = Response(OK)
-            r.set_content(content)
-            return r
-
-        return Response(NOT_FOUND)
+        code, content = self._get_content()
+        return self.make_response(code, content=content)
 
     def head(self):
-        content = self._get_content()
+        code, content = self._get_content()
+        r = self.make_response(code)
         if content:
-            r = Response(OK)
             r.set_content_meta(content)
-            return r
 
-        return Response(NOT_FOUND)
+        return r
 
     def _get_content(self):
         path = os.path.join(DOCUMENTS_ROOT, self.uri)
         if os.path.isfile(path):
-            return FileContent(path)
+            return OK, FileContent(path)
 
         if os.path.isdir(path):
             dir_index_path = os.path.join(path, 'index.html')
             if os.path.isfile(dir_index_path):
-                return FileContent(dir_index_path)
+                return OK, FileContent(dir_index_path)
             else:
-                return RawContent(self._gen_dir_index(self.uri), 'text/html', 'utf-8')
+                return FORBIDDEN, None  # 403.14 - Directory listing denied.
 
-        if os.path.basename(path) == 'index.html' and os.path.isdir(os.path.dirname(path)):
-            dir_uri = os.path.dirname(self.uri)
-            return RawContent(self._gen_dir_index(dir_uri), 'text/html', 'utf-8')
-
-        return None
+        return NOT_FOUND, None
 
     def _parse_request(self):
         data = self.recv(8 * 1024)
@@ -221,39 +214,20 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
                     self.send(data)
         self.close()
 
-    def send_status_code(self, code, message=None):
-        self.send_response(Response(code, message))
+    def make_response(self, status_code, status_message=None, content=None, headers=None):
+        r = Response(status_code, self.http_version, status_message)
+        if content:
+            r.set_content(content)
+        if headers:
+            for name, value in headers.iteritems():
+                r.add_header(name, value)
+
+        return r
 
     def _clean_uri(self, uri):
         uri = urllib.unquote(uri)
         uri = uri.split('?')[0].split('#')[0]
         return uri.lstrip('/')
-
-    def _gen_dir_index(self, uri):
-        full_path = os.path.join(DOCUMENTS_ROOT, uri)
-        uri_html_pattern = '<li><a href={}>{}</a></li>'
-        index = []
-        if uri:  # not root dir
-            if uri.endswith('/'):
-                back_uri = '../'
-            else:
-                back_uri = './'
-            index.append((back_uri, '../'))
-
-        for name in os.listdir(full_path):
-            path = urllib.quote(name)
-            if os.path.isdir(os.path.join(full_path, name)):
-                path += '/'
-                name += '/'
-
-            index.append((path, name))
-
-        html_data = ''.join([uri_html_pattern.format(*pair) for pair in index])
-
-        with open(INDEX_TEMPLATE_PATH, 'r') as template_fp:
-            template = Template(template_fp.read())
-        index_page = template.substitute(uris=html_data)
-        return index_page
 
 
 class HttpServer(asyncore.dispatcher):
