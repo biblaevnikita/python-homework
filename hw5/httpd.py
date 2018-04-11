@@ -226,6 +226,7 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
 
     def _clean_uri(self, uri):
         uri = urllib.unquote(uri)
+        uri = os.path.normpath(uri)
         uri = uri.split('?')[0].split('#')[0]
         return uri.lstrip('/')
 
