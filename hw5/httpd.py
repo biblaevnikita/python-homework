@@ -145,7 +145,10 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
         self.http_version = None
 
     def handle_read(self):
-        method, uri, http_version = self._parse_request()
+        request = self._parse_request()
+        if not request:
+            return
+        method, uri, http_version = request
         logging.info('{} {} {}'.format(http_version, method, uri))
         self.uri = self._clean_uri(uri)
         self.method = method
@@ -198,6 +201,9 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
 
     def _parse_request(self):
         data = self.recv(8 * 1024)
+        if not data:
+            return None
+        
         request_lines = data.splitlines(False)
         status_line = request_lines[0]
         return status_line.split(' ')
@@ -240,7 +246,7 @@ class HttpServer(asyncore.dispatcher):
         self.port = port
         self.handler_class = handler_class
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.set_reuse_addr()
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         self.bind((host, port))
         self.listen(5)
 
