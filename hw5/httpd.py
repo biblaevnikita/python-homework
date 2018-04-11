@@ -1,3 +1,4 @@
+# coding=utf-8
 import abc
 import argparse
 import contextlib
@@ -147,8 +148,6 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
         self.uri = self._clean_uri(uri)
         self.method = method
 
-        print(self.uri)
-
         if http_version != HTTP_VERSION:
             self.send_status_code(HTTP_VERSION_NOT_SUPPORTED)
             return
@@ -217,7 +216,6 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
             with response.content.stream() as stream:
                 while True:
                     data = stream.read(512)
-                    print(data)
                     if not data:
                         break
                     self.send(data)
@@ -226,19 +224,8 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
     def send_status_code(self, code, message=None):
         self.send_response(Response(code, message))
 
-    def _get_target_file_path(self, uri):
-        fs_path = os.path.join(DOCUMENTS_ROOT, uri)
-        if os.path.isfile(fs_path):
-            return fs_path
-
-        if os.path.isdir(fs_path):
-            index_path = os.path.join(uri, 'index.html')
-            return self._get_target_file_path(index_path)
-
-        return None
-
     def _clean_uri(self, uri):
-        uri = urllib.unquote(uri).decode('utf-8')
+        uri = urllib.unquote(uri)
         uri = uri.split('?')[0].split('#')[0]
         return uri.lstrip('/')
 
@@ -254,14 +241,15 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
             index.append((back_uri, '../'))
 
         for name in os.listdir(full_path):
-            name = name.encode(sys.getfilesystemencoding()).decode('utf-8')
             path = urllib.quote(name)
             if os.path.isdir(os.path.join(full_path, name)):
                 path += '/'
                 name += '/'
+
             index.append((path, name))
 
-        html_data = '\n'.join([uri_html_pattern.format(path, name) for path, name in index])
+        html_data = ''.join([uri_html_pattern.format(*pair) for pair in index])
+
         with open(INDEX_TEMPLATE_PATH, 'r') as template_fp:
             template = Template(template_fp.read())
         index_page = template.substitute(uris=html_data)
