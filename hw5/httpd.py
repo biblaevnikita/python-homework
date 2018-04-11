@@ -303,7 +303,7 @@ def parse_args():
     parser.add_argument('-w', dest='workers', help='Workers count', type=int, required=True)
     parser.add_argument('-r', dest='documents_root', help='Documents root path', required=True)
     parser.add_argument('-a', dest='address', help='IP address to listen on', default='0.0.0.0')
-    parser.add_argument('-p', dest='port', help='Port', type=int, default=80)
+    parser.add_argument('-p', dest='port', help='Port', type=int, default=8080)
     parser.add_argument('-l', dest='log_file', help='Log file path')
     return parser.parse_args()
 
