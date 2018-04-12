@@ -39,9 +39,8 @@ INDEX_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'index.html')
 class FileContent(object):
     def __init__(self, f_path):
         self._f_path = f_path
-        content_type, encoding = mimetypes.guess_type(f_path)
-        length = os.path.getsize(f_path)
-        super(FileContent, self).__init__(length, content_type, encoding)
+        self.length = os.path.getsize(f_path)
+        self.type, self.encoding = mimetypes.guess_type(f_path)
 
     @contextlib.contextmanager
     def stream(self):
