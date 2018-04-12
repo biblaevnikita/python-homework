@@ -36,43 +36,18 @@ RESPONSE_CODES = {OK: 'OK',
 INDEX_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'index.html')
 
 
-class Content(object):
-    __metaclass__ = abc.ABCMeta
-
-    def __init__(self, length, content_type, encoding):
-        self.length = length
-        self.type = content_type
-        self.encoding = encoding
-
-    @abc.abstractmethod
-    def get_stream(self):
-        raise NotImplementedError
-
-    @contextlib.contextmanager
-    def stream(self):
-        stream = self.get_stream()
-        yield stream
-        stream.close()
-
-
-class FileContent(Content):
+class FileContent(object):
     def __init__(self, f_path):
         self._f_path = f_path
         content_type, encoding = mimetypes.guess_type(f_path)
         length = os.path.getsize(f_path)
         super(FileContent, self).__init__(length, content_type, encoding)
 
-    def get_stream(self):
-        return open(self._f_path, 'rb')
-
-
-class RawContent(Content):
-    def __init__(self, content_str, content_type, encoding):
-        self._content_str = content_str
-        super(RawContent, self).__init__(len(self._content_str), content_type, encoding)
-
-    def get_stream(self):
-        return StringIO(self._content_str)
+    @contextlib.contextmanager
+    def stream(self):
+        stream = open(self._f_path, 'rb')
+        yield stream
+        stream.close()
 
 
 class Response(object):
