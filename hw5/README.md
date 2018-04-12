@@ -2,7 +2,7 @@
 
 ## Пример запуска
 ```
-python httpd.py -a 127.0.0.1 -p 8080 -w 4 -d /some/folder
+python httpd.py -a 127.0.0.1 -p 8080 -w 4 -r /some/folder
 ```
 
 ## Параметры запуска
