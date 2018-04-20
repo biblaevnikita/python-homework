@@ -1,5 +1,4 @@
 # coding=utf-8
-import abc
 import argparse
 import contextlib
 import datetime
@@ -10,7 +9,6 @@ import os
 import socket
 import sys
 import urllib
-from StringIO import StringIO
 
 import asyncore_epoll as asyncore
 
@@ -34,6 +32,13 @@ RESPONSE_CODES = {OK: 'OK',
                   HTTP_VERSION_NOT_SUPPORTED: 'HTTP Version Not Supported'}
 
 INDEX_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'index.html')
+
+PARSE_STATUS = 0
+PARSE_HEADERS = 1
+PARSE_CONTENT = 2
+PARSE_DONE = 3
+
+CRLF = '\r\n'
 
 
 class FileContent(object):
@@ -114,21 +119,27 @@ class Response(object):
 class HttpRequestHandler(asyncore.dispatcher_with_send):
     def __init__(self, sock):
         asyncore.dispatcher_with_send.__init__(self, sock)
+        self.http_version = None
         self.method = None
         self.uri = None
-        self.http_version = None
+        self.headers = {}
+        self.content = b''
+
+        self._inc_buffer = b''
+        self._parser_state = PARSE_STATUS
 
     def handle_read(self):
-        request = self._parse_request()
-        if not request:
+        received = self.recv(4 * 1024)
+        if not received:
             return
-        method, uri, http_version = request
-        logging.info('{} {} {}'.format(http_version, method, uri))
-        self.uri = self._clean_uri(uri)
-        self.method = method
-        self.http_version = http_version
 
-        if http_version not in SUPPORTED_HTTP_VERSIONS:
+        self._inc_buffer += received
+        if not self._parse_request():
+            self.send_response(self.make_response(BAD_REQUEST))
+            return
+
+    def terminator_found(self):
+        if self.http_version not in SUPPORTED_HTTP_VERSIONS:
             self.send_response(self.make_response(HTTP_VERSION_NOT_SUPPORTED))
             return
 
@@ -174,13 +185,61 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
         return NOT_FOUND, None
 
     def _parse_request(self):
-        data = self.recv(8 * 1024)
-        if not data:
-            return None
-        
-        request_lines = data.splitlines(False)
-        status_line = request_lines[0]
-        return status_line.split(' ')
+        while self._inc_buffer:
+            if self._parser_state == PARSE_STATUS:
+                pos = self._inc_buffer.find(CRLF)
+                if pos == -1:
+                    return True
+
+                status_line = self._inc_buffer[:pos]
+                self._inc_buffer = self._inc_buffer[pos + len(CRLF):]
+
+                self._parser_state = PARSE_HEADERS
+                if not self._parse_status(status_line):
+                    return False
+
+            elif self._parser_state == PARSE_HEADERS:
+                pos = self._inc_buffer.find(CRLF)
+                if pos == -1:
+                    return True
+                elif pos == 0:
+                    self._parser_state = PARSE_CONTENT
+                    self.terminator_found()
+                    return True
+                else:
+                    header_line = self._inc_buffer[:pos]
+                    self._inc_buffer = self._inc_buffer[pos + len(CRLF):]
+                    if not self._parse_header(header_line):
+                        return False
+
+            elif self._parser_state == PARSE_CONTENT:
+                self.content += self._inc_buffer
+                self._inc_buffer = b''
+
+            else:
+                return False
+
+        return True
+
+    def _parse_status(self, status_line):
+        status_line = status_line.strip()
+        parts = status_line.split(' ')
+        if len(parts) != 3:
+            return False
+
+        self.method, self.uri, self.http_version = parts
+        self.uri = self._clean_uri(self.uri)
+
+        return True
+
+    def _parse_header(self, header_line):
+        header_line = header_line.strip()
+        parts = header_line.split(':')
+        if len(parts) != 2:
+            return False
+
+        self.headers[parts[0]] = parts[1].strip()
+        return True
 
     def send_response(self, response):
         response.add_header('Connection', 'close')
@@ -195,7 +254,8 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
         self.close()
 
     def make_response(self, status_code, status_message=None, content=None, headers=None):
-        r = Response(status_code, self.http_version, status_message)
+        http_version = self.http_version or 'HTTP/1.1'
+        r = Response(status_code, http_version, status_message)
         if content:
             r.set_content(content)
         if headers:
@@ -204,7 +264,8 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
 
         return r
 
-    def _clean_uri(self, uri):
+    @staticmethod
+    def _clean_uri(uri):
         uri = urllib.unquote(uri)
         uri = os.path.normpath(uri)
         uri = uri.split('?')[0].split('#')[0]
@@ -220,8 +281,8 @@ class HttpServer(asyncore.dispatcher):
         self.port = port
         self.handler_class = handler_class
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.set_reuse_addr()
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        self.bind((host, port))
         self.listen(5)
 
     def handle_accept(self):
