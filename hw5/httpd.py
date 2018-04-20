@@ -234,11 +234,12 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
 
     def _parse_header(self, header_line):
         header_line = header_line.strip()
+
         parts = header_line.split(':')
-        if len(parts) != 2:
+        if len(parts) < 2:
             return False
 
-        self.headers[parts[0]] = parts[1].strip()
+        self.headers[parts[0]] = ':'.join(parts[1:]).strip()
         return True
 
     def send_response(self, response):
@@ -281,8 +282,8 @@ class HttpServer(asyncore.dispatcher):
         self.port = port
         self.handler_class = handler_class
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.set_reuse_addr()
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        self.bind((host, port))
         self.listen(5)
 
     def handle_accept(self):
