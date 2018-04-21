@@ -1,16 +1,20 @@
-import shutil
-import asyncio
-import aiohttp
 import argparse
+import asyncio
 import logging
 import os
+import shutil
+import time
+
+import aiohttp
 import requests
 from lxml import html
-import time
+from concurrent.futures import ThreadPoolExecutor
 
 BASE_URL = 'https://news.ycombinator.com/'
 RESTRICTED_CHARS = '<>:"/\\|?*'
 THREAD_PAGE_HREF = 'item?id='
+
+tp_executor = ThreadPoolExecutor(30)
 
 
 def restore_state(output_dir):
@@ -60,7 +64,12 @@ async def download_url(url, session, to):
         os.makedirs(base_dir)
 
     data = await fetch_url(url, session)
-    with open(to, 'wb') as fp:
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(tp_executor, save_data, to, data)
+
+
+def save_data(file_path, data):
+    with open(file_path, 'wb') as fp:
         fp.write(data)
 
 
@@ -173,7 +182,10 @@ def main(args):
         duration += time.time()
         logging.info('Collected in {:.2f} seconds'.format(duration))
         logging.info('Zzz...')
-        time.sleep(args.interval)
+
+        sleep_time = args.interval - duration
+        if sleep_time > 0:
+            time.sleep(args.interval)
 
 
 def create_name_from_url(url):
