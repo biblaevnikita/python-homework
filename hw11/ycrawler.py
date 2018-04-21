@@ -77,6 +77,10 @@ async def collect_news(news, output_dir, timeout):
     async with aiohttp.ClientSession() as session:
         tasks = []
         for thread_id, news_url in news.items():
+            # internal link support
+            if news_url.startswith(THREAD_PAGE_HREF):
+                news_url = BASE_URL + news_url
+
             path = os.path.join(output_dir, thread_id, 'news.html')
             tasks.append(download_url(news_url, session, path))
 
