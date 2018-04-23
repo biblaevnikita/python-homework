@@ -35,6 +35,7 @@ INDEX_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'index.html')
 
 TERMINATOR = '\r\n\r\n'
 
+
 class FileContent(object):
     def __init__(self, f_path):
         self._f_path = f_path
@@ -118,6 +119,7 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
         self.uri = None
         self.headers = {}
         self._terminator_found = False
+        self._inc_buffer = b''
 
     def handle_read(self):
         if self._terminator_found:
@@ -129,7 +131,7 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
 
         self._inc_buffer += received
         terminator_pos = self._inc_buffer.find(TERMINATOR)
-        if not terminator_pos:
+        if terminator_pos == -1:
             return
 
         self._terminator_found = True
@@ -186,11 +188,11 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
 
         return NOT_FOUND, None
 
-    def _parse_request(self, data):
-        if not data:
+    def _parse_request(self):
+        if not self._inc_buffer:
             return False
 
-        lines = data.split('\r\n')
+        lines = self._inc_buffer.split('\r\n')
         if not self._parse_status(lines[0]):
             return False
 
