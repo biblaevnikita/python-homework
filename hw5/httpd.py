@@ -33,13 +33,7 @@ RESPONSE_CODES = {OK: 'OK',
 
 INDEX_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'index.html')
 
-PARSE_STATUS = 0
-PARSE_HEADERS = 1
-PARSE_CONTENT = 2
-PARSE_DONE = 3
-
-CRLF = '\r\n'
-
+TERMINATOR = '\r\n\r\n'
 
 class FileContent(object):
     def __init__(self, f_path):
@@ -123,22 +117,30 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
         self.method = None
         self.uri = None
         self.headers = {}
-        self.content = b''
-
-        self._inc_buffer = b''
-        self._parser_state = PARSE_STATUS
+        self._terminator_found = False
 
     def handle_read(self):
+        if self._terminator_found:
+            return
+
         received = self.recv(4 * 1024)
         if not received:
             return
 
         self._inc_buffer += received
+        terminator_pos = self._inc_buffer.find(TERMINATOR)
+        if not terminator_pos:
+            return
+
+        self._terminator_found = True
+        self._inc_buffer = self._inc_buffer[:terminator_pos]
         if not self._parse_request():
             self.send_response(self.make_response(BAD_REQUEST))
             return
 
-    def terminator_found(self):
+        self.respond()
+
+    def respond(self):
         if self.http_version not in SUPPORTED_HTTP_VERSIONS:
             self.send_response(self.make_response(HTTP_VERSION_NOT_SUPPORTED))
             return
@@ -184,39 +186,16 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
 
         return NOT_FOUND, None
 
-    def _parse_request(self):
-        while self._inc_buffer:
-            if self._parser_state == PARSE_STATUS:
-                pos = self._inc_buffer.find(CRLF)
-                if pos == -1:
-                    return True
+    def _parse_request(self, data):
+        if not data:
+            return False
 
-                status_line = self._inc_buffer[:pos]
-                self._inc_buffer = self._inc_buffer[pos + len(CRLF):]
+        lines = data.split('\r\n')
+        if not self._parse_status(lines[0]):
+            return False
 
-                self._parser_state = PARSE_HEADERS
-                if not self._parse_status(status_line):
-                    return False
-
-            elif self._parser_state == PARSE_HEADERS:
-                pos = self._inc_buffer.find(CRLF)
-                if pos == -1:
-                    return True
-                elif pos == 0:
-                    self._parser_state = PARSE_CONTENT
-                    self.terminator_found()
-                    return True
-                else:
-                    header_line = self._inc_buffer[:pos]
-                    self._inc_buffer = self._inc_buffer[pos + len(CRLF):]
-                    if not self._parse_header(header_line):
-                        return False
-
-            elif self._parser_state == PARSE_CONTENT:
-                self.content += self._inc_buffer
-                self._inc_buffer = b''
-
-            else:
+        for line in lines[1:]:
+            if not self._parse_header(line):
                 return False
 
         return True
