@@ -9,6 +9,7 @@ import os
 import socket
 import sys
 import urllib
+import threading
 
 import asyncore_epoll as asyncore
 
@@ -21,6 +22,7 @@ BAD_REQUEST = 400
 NOT_FOUND = 404
 FORBIDDEN = 403
 METHOD_NOT_SUPPORTED = 405
+REQUEST_TIMEOUT = 408
 INTERNAL_ERROR = 500
 HTTP_VERSION_NOT_SUPPORTED = 505
 
@@ -28,12 +30,15 @@ RESPONSE_CODES = {OK: 'OK',
                   BAD_REQUEST: 'Bad Request',
                   NOT_FOUND: 'Not Found',
                   METHOD_NOT_SUPPORTED: 'Method Not Allowed',
+                  REQUEST_TIMEOUT: 'Request Timeout',
                   INTERNAL_ERROR: 'Internal Error',
                   HTTP_VERSION_NOT_SUPPORTED: 'HTTP Version Not Supported'}
 
 INDEX_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'index.html')
 
 TERMINATOR = '\r\n\r\n'
+
+REQUEST_TIMEOUT_SECONDS = 30
 
 
 class FileContent(object):
@@ -118,11 +123,15 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
         self.method = None
         self.uri = None
         self.headers = {}
-        self._terminator_found = False
         self._inc_buffer = b''
 
+        self._terminator_found = threading.Event()
+        self._request_thread = threading.Thread(target=self._wait_request)
+        self._request_thread.daemon = True
+        self._request_thread.start()
+
     def handle_read(self):
-        if self._terminator_found:
+        if self._terminator_found.is_set():
             return
 
         received = self.recv(4 * 1024)
@@ -134,13 +143,8 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
         if terminator_pos == -1:
             return
 
-        self._terminator_found = True
         self._inc_buffer = self._inc_buffer[:terminator_pos]
-        if not self._parse_request():
-            self.send_response(self.make_response(BAD_REQUEST))
-            return
-
-        self.respond()
+        self._terminator_found.set()
 
     def respond(self):
         if self.http_version not in SUPPORTED_HTTP_VERSIONS:
@@ -173,6 +177,18 @@ class HttpRequestHandler(asyncore.dispatcher_with_send):
             r.set_content_meta(content)
 
         return r
+
+    def _wait_request(self):
+        self._terminator_found.wait(REQUEST_TIMEOUT_SECONDS)
+        if not self._terminator_found.is_set():
+            self.send_response(self.make_response(REQUEST_TIMEOUT))
+            return
+
+        if not self._parse_request():
+            self.send_response(self.make_response(BAD_REQUEST))
+            return
+
+        self.respond()
 
     def _get_content(self):
         path = os.path.join(DOCUMENTS_ROOT, self.uri)
